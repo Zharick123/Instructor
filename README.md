@@ -227,7 +227,7 @@ namespace CronosControl.Controllers
         public ActionResult ProgramasFormacion()
         {
             // Obtener los programas de formación asociados al instructor
-            string instructorId = "123"; // Reemplaza con la lógica para obtener el ID del instructor actual
+            string instructorId = "1043968399"; // Reemplaza con la lógica para obtener el ID del instructor actual
             List<ProgramaFormacion> programas = ObtenerProgramasFormacion(instructorId);
 
             return View(programas);
