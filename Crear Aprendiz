@@ -252,3 +252,113 @@ public ActionResult ListaAprendices(string search)
 ### Resumen
 
 Estos pasos permiten crear perfiles de aprendices, generando su correo y contraseña automáticamente, asignándoles el rol de "Aprendiz", y proporcionando la capacidad de listar y filtrar los perfiles. La información se guarda en la base de datos, y las vistas permiten la interacción del usuario con el sistema. Asegúrate de ajustar los detalles según las necesidades específicas de tu aplicación y entorno.
+
+
+_____________________________________________
+
+Para integrar la funcionalidad de crear perfiles de aprendices utilizando la tabla existente `usuarios`, necesitas hacer algunos ajustes en los modelos, controladores y vistas para asegurarte de que estás trabajando con los campos correctos de tu tabla. Aquí tienes una guía completa de cómo hacerlo:
+
+### Modelo
+
+Ajusta el modelo `Aprendiz` para que coincida con la estructura de la tabla `usuarios`:
+
+```csharp
+public class Aprendiz
+{
+    public int IdUsuario { get; set; }
+    public string Nombre { get; set; }
+    public string Apellido { get; set; }
+    public string Correo { get; set; }
+    public string Contraseña { get; set; }
+    public DateTime FechaRegistro { get; set; }
+    public long Telefono { get; set; }
+    public string TipoUsuario { get; set; }
+}
+```
+
+### Controlador
+
+Actualiza el controlador para manejar la creación de perfiles, generación de correo y contraseña, y asignación de rol:
+
+```csharp
+public class AprendizController : Controller
+{
+    private string Conexion = "data source=DESKTOP-HPRJHVG;initial catalog=proyectoASIS;integrated security=True;MultipleActiveResultSets=True;";
+
+    public ActionResult CrearPerfil()
+    {
+        return View();
+    }
+
+    [HttpPost]
+    public ActionResult CrearPerfil(Aprendiz aprendiz)
+    {
+        if (ModelState.IsValid)
+        {
+            aprendiz.Correo = GenerarCorreo(aprendiz.Nombre, aprendiz.Apellido);
+            aprendiz.Contraseña = GenerarContraseña();
+            aprendiz.TipoUsuario = "Aprendiz";
+            aprendiz.FechaRegistro = DateTime.Now;
+
+            using (SqlConnection connection = new SqlConnection(Conexion))
+            {
+                string query = "INSERT INTO usuarios (telefono, tipo_usuario, nombre, apellido, correo, contraseña, fecha_registro) VALUES (@Telefono, @TipoUsuario, @Nombre, @Apellido, @Correo, @Contraseña, @FechaRegistro)";
+                SqlCommand command = new SqlCommand(query, connection);
+                command.Parameters.AddWithValue("@Telefono", aprendiz.Telefono);
+                command.Parameters.AddWithValue("@TipoUsuario", aprendiz.TipoUsuario);
+                command.Parameters.AddWithValue("@Nombre", aprendiz.Nombre);
+                command.Parameters.AddWithValue("@Apellido", aprendiz.Apellido);
+                command.Parameters.AddWithValue("@Correo", aprendiz.Correo);
+                command.Parameters.AddWithValue("@Contraseña", aprendiz.Contraseña);
+                command.Parameters.AddWithValue("@FechaRegistro", aprendiz.FechaRegistro);
+
+                connection.Open();
+                command.ExecuteNonQuery();
+            }
+
+            return RedirectToAction("PerfilCreado");
+        }
+        return View(aprendiz);
+    }
+
+    private string GenerarCorreo(string nombre, string apellido)
+    {
+        string dominio = "aprendices.institucion.edu";
+        string correo = $"{nombre.ToLower()}.{apellido.ToLower()}@{dominio}";
+        return correo;
+    }
+
+    private string GenerarContraseña()
+    {
+        return Guid.NewGuid().ToString().Substring(0, 8); // Genera una contraseña aleatoria de 8 caracteres
+    }
+
+    public ActionResult PerfilCreado()
+    {
+        return View();
+    }
+    
+    public ActionResult ListaAprendices(string search)
+    {
+        List<Aprendiz> aprendices = new List<Aprendiz>();
+
+        using (SqlConnection connection = new SqlConnection(Conexion))
+        {
+            string query = "SELECT id_usuario, nombre, apellido, correo, tipo_usuario, telefono, fecha_registro FROM usuarios WHERE tipo_usuario = 'Aprendiz'";
+            
+            if (!string.IsNullOrEmpty(search))
+            {
+                query += " AND (nombre LIKE @search OR apellido LIKE @search)";
+            }
+
+            SqlCommand command = new SqlCommand(query, connection);
+            command.Parameters.AddWithValue("@search", "%" + search + "%");
+
+            connection.Open();
+            SqlDataReader reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                Aprendiz aprendiz = new Aprendiz
+                {
+                    IdUsuario = (int)reader["id_usuario"],
+                    Nombre = reader["nombre"].ToString
