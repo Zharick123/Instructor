@@ -343,3 +343,311 @@ _excusa = @dias WHERE id_usuario = @instructorId";
 - When retrieving and processing reports or absence excuses, you can use the `dias_para_excusa` value to enforce the deadline logic.
 
 You will need to create corresponding views and ensure that the front-end calls these actions appropriately, but this code provides the backend foundation for setting and utilizing the 3-day excuse submission window.
+
+Para crear la vista para la acción `EstablecerDiasParaExcusas`, necesitarás agregar una vista Razor a tu proyecto ASP.NET MVC. Esta vista proporcionará un formulario donde el instructor puede ingresar el número de días permitidos para subir una excusa.
+
+### 1. Crear la Vista
+
+Primero, crea un archivo de vista llamado `EstablecerDiasParaExcusas.cshtml` en el directorio `Views/Instructor`.
+
+```html
+@{
+    ViewBag.Title = "Establecer Días para Excusas";
+}
+
+<h2>Establecer Días para Excusas</h2>
+
+<div>
+    <form id="diasParaExcusaForm">
+        <div class="form-group">
+            <label for="diasParaExcusa">Número de días permitidos para subir excusa:</label>
+            <input type="number" class="form-control" id="diasParaExcusa" name="diasParaExcusa" min="1" required />
+        </div>
+        <button type="submit" class="btn btn-primary">Guardar</button>
+    </form>
+</div>
+
+<div id="resultMessage" class="mt-3"></div>
+
+@section Scripts {
+    <script>
+        $(document).ready(function () {
+            $("#diasParaExcusaForm").submit(function (event) {
+                event.preventDefault();
+                var diasParaExcusa = $("#diasParaExcusa").val();
+
+                $.ajax({
+                    url: '@Url.Action("EstablecerDiasParaExcusa", "Instructor")',
+                    type: 'POST',
+                    data: { dias: diasParaExcusa },
+                    success: function (response) {
+                        $("#resultMessage").text(response.message);
+                    },
+                    error: function (xhr, status, error) {
+                        $("#resultMessage").text("Error al establecer los días para excusa.");
+                    }
+                });
+            });
+        });
+    </script>
+}
+```
+
+### 2. Actualizar el Controlador
+
+Asegúrate de que el método `EstablecerDiasParaExcusa` en tu `InstructorController` esté decorado con los atributos `[HttpPost]` y `[HttpGet]` para manejar tanto la solicitud GET que muestra el formulario como la solicitud POST que procesa el envío del formulario.
+
+Aquí tienes una actualización de tu `InstructorController`:
+
+```csharp
+public class InstructorController : Controller
+{
+    // Código existente...
+
+    [HttpGet]
+    public ActionResult EstablecerDiasParaExcusa()
+    {
+        return View();
+    }
+
+    [HttpPost]
+    public JsonResult EstablecerDiasParaExcusa(int dias)
+    {
+        int instructorId = ObtenerIdInstructor();
+
+        using (SqlConnection connection = new SqlConnection(Conexion))
+        {
+            string query = "UPDATE usuarios SET dias_para_excusa = @dias WHERE id_usuario = @instructorId";
+            SqlCommand command = new SqlCommand(query, connection);
+            command.Parameters.AddWithValue("@dias", dias);
+            command.Parameters.AddWithValue("@instructorId", instructorId);
+
+            connection.Open();
+            command.ExecuteNonQuery();
+        }
+
+        return Json(new { success = true, message = "Días para subir excusa actualizados." });
+    }
+
+    // Código existente...
+}
+```
+
+### 3. Asegurar el Enrutamiento Correcto
+
+Asegúrate de que tu configuración de rutas en `RouteConfig.cs` permita esta acción. Normalmente, esto ya estará configurado para manejar acciones en el `InstructorController`, pero es bueno verificarlo.
+
+```csharp
+public class RouteConfig
+{
+    public static void RegisterRoutes(RouteCollection routes)
+    {
+        routes.IgnoreRoute("{resource}.axd/{*pathInfo}");
+
+        routes.MapRoute(
+            name: "Default",
+            url: "{controller}/{action}/{id}",
+            defaults: new { controller = "Home", action = "Index", id = UrlParameter.Optional }
+        );
+    }
+}
+```
+
+### 4. Incluir jQuery
+
+La vista utiliza jQuery para el envío del formulario mediante AJAX. Asegúrate de que tienes jQuery incluido en tu proyecto. Puedes incluirlo en tu `_Layout.cshtml` o directamente en la vista si es necesario.
+
+Aquí tienes un ejemplo de cómo incluir jQuery en `_Layout.cshtml`:
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>@ViewBag.Title - Mi Aplicación ASP.NET</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    @RenderSection("scripts", required: false)
+</head>
+<body>
+    @RenderBody()
+</body>
+</html>
+```
+
+### Resumen
+
+Con estos cambios, tu vista permitirá que los instructores establezcan el número de días que los estudiantes tienen para subir una excusa. El formulario utiliza AJAX para enviar los datos al controlador, que luego actualiza la base de datos. El usuario recibe retroalimentación sobre si la operación fue exitosa o no.
+
+
+Para implementar los tres pasos solicitados, aquí están las modificaciones necesarias:
+
+### Paso 1: Crear un método en el controlador para establecer el plazo máximo de 3 días
+
+Vamos a agregar un método que se encargue de recibir la fecha de falta y calcular si la excusa se ha subido dentro de los 3 días posteriores.
+
+#### Modificaciones en el Controlador `InstructorController`
+
+```csharp
+public ActionResult SubirExcusa()
+{
+    return View();
+}
+
+[HttpPost]
+public ActionResult SubirExcusa(DateTime fechaFalta, HttpPostedFileBase excusaFile)
+{
+    // Validar que la excusa se suba dentro del plazo de 3 días
+    if ((DateTime.Now - fechaFalta).Days > 3)
+    {
+        ViewBag.Message = "El plazo de 3 días ha pasado, no se puede subir la excusa.";
+        return View();
+    }
+
+    if (excusaFile != null && excusaFile.ContentLength > 0)
+    {
+        string filePath = Path.Combine(Server.MapPath("~/Excusas/"), Path.GetFileName(excusaFile.FileName));
+        excusaFile.SaveAs(filePath);
+
+        using (SqlConnection connection = new SqlConnection(Conexion))
+        {
+            string query = "INSERT INTO excusas (id_usuario, fecha_falta, ruta_excusa, fecha_subida, estado) VALUES (@idUsuario, @fechaFalta, @rutaExcusa, GETDATE(), 'pendiente')";
+            SqlCommand command = new SqlCommand(query, connection);
+            command.Parameters.AddWithValue("@idUsuario", ObtenerIdInstructor());
+            command.Parameters.AddWithValue("@fechaFalta", fechaFalta);
+            command.Parameters.AddWithValue("@rutaExcusa", filePath);
+
+            connection.Open();
+            command.ExecuteNonQuery();
+        }
+        ViewBag.Message = "Excusa subida exitosamente.";
+    }
+    else
+    {
+        ViewBag.Message = "Error al subir la excusa.";
+    }
+
+    return View();
+}
+
+public ActionResult VerExcusas()
+{
+    int instructorId = ObtenerIdInstructor();
+    List<Excusa> excusas = ObtenerExcusas(instructorId);
+    return View(excusas);
+}
+
+private List<Excusa> ObtenerExcusas(int instructorId)
+{
+    List<Excusa> excusas = new List<Excusa>();
+
+    using (SqlConnection connection = new SqlConnection(Conexion))
+    {
+        string query = "SELECT id_excusa, id_usuario, fecha_falta, ruta_excusa, fecha_subida, estado FROM excusas WHERE id_usuario = @idUsuario";
+        SqlCommand command = new SqlCommand(query, connection);
+        command.Parameters.AddWithValue("@idUsuario", instructorId);
+
+        connection.Open();
+        SqlDataReader reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            Excusa excusa = new Excusa
+            {
+                IdExcusa = (int)reader["id_excusa"],
+                IdUsuario = (int)reader["id_usuario"],
+                FechaFalta = (DateTime)reader["fecha_falta"],
+                RutaExcusa = reader["ruta_excusa"].ToString(),
+                FechaSubida = (DateTime)reader["fecha_subida"],
+                Estado = reader["estado"].ToString()
+            };
+            excusas.Add(excusa);
+        }
+    }
+
+    return excusas;
+}
+```
+
+### Paso 2: Modificar la vista para incluir la funcionalidad de subir excusas
+
+#### Crear la Vista `SubirExcusa.cshtml`
+
+```html
+@{
+    ViewBag.Title = "Subir Excusa";
+}
+
+<h2>Subir Excusa</h2>
+
+@using (Html.BeginForm("SubirExcusa", "Instructor", FormMethod.Post, new { enctype = "multipart/form-data" }))
+{
+    <div class="form-group">
+        @Html.Label("Fecha de Falta")
+        @Html.TextBox("fechaFalta", "", new { @class = "form-control", type = "date" })
+    </div>
+    <div class="form-group">
+        <label for="excusaFile">Archivo de Excusa</label>
+        <input type="file" name="excusaFile" class="form-control" />
+    </div>
+    <button type="submit" class="btn btn-primary">Subir Excusa</button>
+}
+
+@if (ViewBag.Message != null)
+{
+    <div class="alert alert-info">
+        @ViewBag.Message
+    </div>
+}
+```
+
+#### Crear la Vista `VerExcusas.cshtml`
+
+```html
+@model List<CronosControl_14.Model.Excusa>
+
+@{
+    ViewBag.Title = "Ver Excusas";
+}
+
+<h2>Ver Excusas</h2>
+
+<table class="table">
+    <thead>
+        <tr>
+            <th>Fecha de Falta</th>
+            <th>Ruta de Excusa</th>
+            <th>Fecha de Subida</th>
+            <th>Estado</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var excusa in Model)
+        {
+            <tr>
+                <td>@excusa.FechaFalta.ToString("yyyy-MM-dd")</td>
+                <td>@Html.ActionLink("Ver Archivo", "DownloadFile", new { filePath = excusa.RutaExcusa })</td>
+                <td>@excusa.FechaSubida.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                <td>@excusa.Estado</td>
+            </tr>
+        }
+    </tbody>
+</table>
+```
+
+### Paso 3: Agregar validaciones necesarias
+
+Ya hemos incluido validaciones en el método `SubirExcusa` para verificar que la excusa se suba dentro del plazo de 3 días. Aquí se valida que la diferencia de días entre la fecha actual y la fecha de falta no sea mayor a 3 días.
+
+### Resumen de los Cambios
+
+1. **Método en el controlador**:
+   - `SubirExcusa` para permitir la subida de excusas con validación del plazo de 3 días.
+   - `VerExcusas` para que el instructor pueda ver todas las excusas subidas por los aprendices.
+   - `ObtenerExcusas` para obtener las excusas desde la base de datos.
+
+2. **Vistas**:
+   - `SubirExcusa.cshtml` para permitir la subida de excusas.
+   - `VerExcusas.cshtml` para permitir al instructor ver las excusas subidas y su estado.
+
+3. **Validaciones**:
+   - Verificación de que la excusa se sube dentro del plazo permitido de 3 días en el método `SubirExcusa`.
+
+Con estos cambios, el sistema ahora permite a los aprendices subir excusas y a los instructores ver y validar dichas excusas.
