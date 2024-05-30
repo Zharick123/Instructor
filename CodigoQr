@@ -1,1 +1,218 @@
-a
+
+Para implementar la funcionalidad de registrar asistencia mediante un código QR que genere un enlace aleatorio a un formulario de Google, y que permita a los instructores establecer la duración del QR, habilitarlo y deshabilitarlo, sigue los pasos a continuación.
+
+### Modelo de Datos
+Asegúrate de que tu base de datos tenga las siguientes tablas:
+- `Asistencias`: para registrar las asistencias.
+- `ConfiguracionQR`: para almacenar la configuración de QR por clase.
+
+### Modificaciones en el Controlador `InstructorController`
+
+#### Generación de QR Code y Guardar la Configuración
+
+1. **Método para Generar QR**
+
+```csharp
+public ActionResult GenerarQR()
+{
+    if (classStartTime.HasValue && classEndTime.HasValue)
+    {
+        TimeSpan currentTime = DateTime.Now.TimeOfDay;
+        if (currentTime < classStartTime.Value || currentTime > classEndTime.Value)
+        {
+            qrEnabled = false;
+        }
+        else
+        {
+            qrEnabled = true;
+        }
+    }
+
+    if (currentQRData == null || (DateTime.Now - lastQRUpdateTime).TotalMinutes > 60 || !qrEnabled)
+    {
+        string googleFormUrl = "https://docs.google.com/forms/d/e/1FAIpQLScoP2XCRy2oDlWi0ujw8Q8nLOoiTla-_snELeiv30jhMc42BQ/viewform?usp=sf_link" + Guid.NewGuid().ToString();
+        currentQRData = googleFormUrl;
+        lastQRUpdateTime = DateTime.Now;
+        qrEnabled = true;
+
+        GuardarConfiguracionQR(currentQRData, lastQRUpdateTime, qrEnabled);
+    }
+
+    if (!qrEnabled)
+    {
+        return new HttpStatusCodeResult(403, "QR deshabilitado fuera de las horas de clase.");
+    }
+
+    QRCodeGenerator qrGenerator = new QRCodeGenerator();
+    QRCodeData qrCodeData = qrGenerator.CreateQrCode(currentQRData, QRCodeGenerator.ECCLevel.Q);
+    QRCode qrCode = new QRCode(qrCodeData);
+    Bitmap qrCodeImage = qrCode.GetGraphic(10);
+
+    using (MemoryStream stream = new MemoryStream())
+    {
+        qrCodeImage.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
+        byte[] imageBytes = stream.ToArray();
+        return File(imageBytes, "image/png");
+    }
+}
+
+private void GuardarConfiguracionQR(string qrData, DateTime updateTime, bool enabled)
+{
+    using (SqlConnection connection = new SqlConnection(Conexion))
+    {
+        string query = "INSERT INTO ConfiguracionQR (QRData, LastUpdateTime, QREnabled) VALUES (@QRData, @LastUpdateTime, @QREnabled)";
+        SqlCommand command = new SqlCommand(query, connection);
+        command.Parameters.AddWithValue("@QRData", qrData);
+        command.Parameters.AddWithValue("@LastUpdateTime", updateTime);
+        command.Parameters.AddWithValue("@QREnabled", enabled);
+
+        connection.Open();
+        command.ExecuteNonQuery();
+    }
+}
+```
+
+#### Habilitar y Deshabilitar QR
+
+2. **Métodos para Habilitar y Deshabilitar QR**
+
+```csharp
+[HttpPost]
+public JsonResult DeshabilitarQR()
+{
+    qrEnabled = false;
+    ActualizarConfiguracionQR(currentQRData, lastQRUpdateTime, qrEnabled);
+    return Json(new { success = true, message = "Código QR deshabilitado." });
+}
+
+[HttpPost]
+public JsonResult HabilitarQR()
+{
+    qrEnabled = true;
+    ActualizarConfiguracionQR(currentQRData, lastQRUpdateTime, qrEnabled);
+    return Json(new { success = true, message = "Código QR habilitado." });
+}
+
+private void ActualizarConfiguracionQR(string qrData, DateTime updateTime, bool enabled)
+{
+    using (SqlConnection connection = new SqlConnection(Conexion))
+    {
+        string query = "UPDATE ConfiguracionQR SET LastUpdateTime = @LastUpdateTime, QREnabled = @QREnabled WHERE QRData = @QRData";
+        SqlCommand command = new SqlCommand(query, connection);
+        command.Parameters.AddWithValue("@QRData", qrData);
+        command.Parameters.AddWithValue("@LastUpdateTime", updateTime);
+        command.Parameters.AddWithValue("@QREnabled", enabled);
+
+        connection.Open();
+        command.ExecuteNonQuery();
+    }
+}
+```
+
+#### Guardar la Configuración de Horas de Clase
+
+3. **Método para Guardar Horas de Clase**
+
+```csharp
+[HttpPost]
+public JsonResult GuardarHorasClase(string classStartTime, string classEndTime)
+{
+    InstructorController.classStartTime = TimeSpan.Parse(classStartTime);
+    InstructorController.classEndTime = TimeSpan.Parse(classEndTime);
+
+    return Json(new { success = true, message = "Horas de clase guardadas." });
+}
+```
+
+### Modificaciones en las Vistas
+
+#### Formulario para Establecer Duración y Habilitar/Deshabilitar QR
+
+4. **Vista: EstablecerDuracionQR.cshtml**
+
+```html
+@{
+    ViewBag.Title = "Establecer Duración QR";
+}
+
+<h2>Establecer Duración QR</h2>
+
+<form id="horasClaseForm">
+    <div class="form-group">
+        <label for="classStartTime">Hora de inicio:</label>
+        <input type="time" class="form-control" id="classStartTime" name="classStartTime">
+    </div>
+    <div class="form-group">
+        <label for="classEndTime">Hora de fin:</label>
+        <input type="time" class="form-control" id="classEndTime" name="classEndTime">
+    </div>
+    <button type="submit" class="btn btn-primary">Guardar Horas de Clase</button>
+</form>
+
+<button id="habilitarQRBtn" class="btn btn-success">Habilitar QR</button>
+<button id="deshabilitarQRBtn" class="btn btn-danger">Deshabilitar QR</button>
+
+<script>
+    $(document).ready(function () {
+        $('#horasClaseForm').submit(function (e) {
+            e.preventDefault();
+            $.ajax({
+                type: "POST",
+                url: '@Url.Action("GuardarHorasClase")',
+                data: $(this).serialize(),
+                success: function (response) {
+                    alert(response.message);
+                }
+            });
+        });
+
+        $('#habilitarQRBtn').click(function () {
+            $.post('@Url.Action("HabilitarQR")', function (response) {
+                alert(response.message);
+            });
+        });
+
+        $('#deshabilitarQRBtn').click(function () {
+            $.post('@Url.Action("DeshabilitarQR")', function (response) {
+                alert(response.message);
+            });
+        });
+    });
+</script>
+```
+
+### Creación de Tablas en la Base de Datos
+
+5. **Script para Crear Tabla ConfiguracionQR**
+
+```sql
+CREATE TABLE ConfiguracionQR (
+    Id INT IDENTITY(1,1) PRIMARY KEY,
+    QRData NVARCHAR(MAX),
+    LastUpdateTime DATETIME,
+    QREnabled BIT
+);
+```
+
+6. **Script para Crear Tabla Asistencias**
+
+```sql
+CREATE TABLE Asistencias (
+    Id INT IDENTITY(1,1) PRIMARY KEY,
+    IdAprendiz INT,
+    Fecha DATE,
+    Estado NVARCHAR(50),
+    Justificacion NVARCHAR(MAX),
+    FOREIGN KEY (IdAprendiz) REFERENCES Aprendices(Id)
+);
+```
+
+### Lógica para Registrar Asistencia desde el QR
+
+7. **Modificar Formulario de Google para Enviar Datos a la Base de Datos**
+
+Configura el formulario de Google para enviar datos a tu backend cuando se complete. Esto puede requerir el uso de un servicio intermediario o un webhook.
+
+### Resumen
+
+Con estas modificaciones, el sistema genera un código QR aleatorio para cada clase, permite a los instructores establecer la duración y habilitar/deshabilitar el QR, y guarda la información en la base de datos. Además, se incluye la lógica para registrar la asistencia mediante el formulario de Google y almacenar los datos en la base de datos. Asegúrate de adaptar y probar estos cambios según las necesidades específicas de tu aplicación y entorno.
