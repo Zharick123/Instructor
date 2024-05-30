@@ -1,0 +1,254 @@
+Para implementar la funcionalidad de crear un perfil de aprendiz, ingresar sus datos personales, generar correo y contraseña, asignar rol y crear un filtrado en tu aplicación, puedes seguir los pasos a continuación:
+
+### Base de Datos
+Asegúrate de que tu base de datos tenga las tablas necesarias para almacenar los datos de los aprendices y sus roles.
+
+```sql
+CREATE TABLE Usuarios (
+    Id INT IDENTITY(1,1) PRIMARY KEY,
+    Nombre NVARCHAR(100),
+    Apellidos NVARCHAR(100),
+    Correo NVARCHAR(100),
+    Contrasena NVARCHAR(100),
+    Rol NVARCHAR(50),
+    FechaRegistro DATETIME DEFAULT GETDATE()
+);
+```
+
+### Modelo
+Define el modelo para los datos del aprendiz.
+
+```csharp
+public class Aprendiz
+{
+    public int Id { get; set; }
+    public string Nombre { get; set; }
+    public string Apellidos { get; set; }
+    public string Correo { get; set; }
+    public string Contrasena { get; set; }
+    public string Rol { get; set; }
+    public DateTime FechaRegistro { get; set; }
+}
+```
+
+### Controlador
+Añade métodos en tu controlador para manejar la creación del perfil de aprendiz, generación de correo y contraseña, y asignación de rol.
+
+```csharp
+public class AprendizController : Controller
+{
+    private string Conexion = "data source=DESKTOP-HPRJHVG;initial catalog=proyectoASIS;integrated security=True;MultipleActiveResultSets=True;";
+
+    public ActionResult CrearPerfil()
+    {
+        return View();
+    }
+
+    [HttpPost]
+    public ActionResult CrearPerfil(Aprendiz aprendiz)
+    {
+        if (ModelState.IsValid)
+        {
+            aprendiz.Correo = GenerarCorreo(aprendiz.Nombre, aprendiz.Apellidos);
+            aprendiz.Contrasena = GenerarContrasena();
+            aprendiz.Rol = "Aprendiz";
+
+            using (SqlConnection connection = new SqlConnection(Conexion))
+            {
+                string query = "INSERT INTO Usuarios (Nombre, Apellidos, Correo, Contrasena, Rol) VALUES (@Nombre, @Apellidos, @Correo, @Contrasena, @Rol)";
+                SqlCommand command = new SqlCommand(query, connection);
+                command.Parameters.AddWithValue("@Nombre", aprendiz.Nombre);
+                command.Parameters.AddWithValue("@Apellidos", aprendiz.Apellidos);
+                command.Parameters.AddWithValue("@Correo", aprendiz.Correo);
+                command.Parameters.AddWithValue("@Contrasena", aprendiz.Contrasena);
+                command.Parameters.AddWithValue("@Rol", aprendiz.Rol);
+
+                connection.Open();
+                command.ExecuteNonQuery();
+            }
+
+            return RedirectToAction("PerfilCreado");
+        }
+        return View(aprendiz);
+    }
+
+    private string GenerarCorreo(string nombre, string apellidos)
+    {
+        string dominio = "aprendices.institucion.edu";
+        string correo = $"{nombre.ToLower()}.{apellidos.ToLower()}@{dominio}";
+        return correo;
+    }
+
+    private string GenerarContrasena()
+    {
+        return Guid.NewGuid().ToString().Substring(0, 8); // Genera una contraseña aleatoria de 8 caracteres
+    }
+
+    public ActionResult PerfilCreado()
+    {
+        return View();
+    }
+}
+```
+
+### Vistas
+Crea vistas para la interfaz de usuario.
+
+#### CrearPerfil.cshtml
+```html
+@model CronosControl_14.Model.Aprendiz
+
+@{
+    ViewBag.Title = "Crear Perfil de Aprendiz";
+}
+
+<h2>Crear Perfil de Aprendiz</h2>
+
+@using (Html.BeginForm()) 
+{
+    @Html.AntiForgeryToken()
+    
+    <div class="form-horizontal">
+        <h4>Datos del Aprendiz</h4>
+        <hr />
+        @Html.ValidationSummary(true, "", new { @class = "text-danger" })
+        
+        <div class="form-group">
+            @Html.LabelFor(model => model.Nombre, htmlAttributes: new { @class = "control-label col-md-2" })
+            <div class="col-md-10">
+                @Html.EditorFor(model => model.Nombre, new { htmlAttributes = new { @class = "form-control" } })
+                @Html.ValidationMessageFor(model => model.Nombre, "", new { @class = "text-danger" })
+            </div>
+        </div>
+
+        <div class="form-group">
+            @Html.LabelFor(model => model.Apellidos, htmlAttributes: new { @class = "control-label col-md-2" })
+            <div class="col-md-10">
+                @Html.EditorFor(model => model.Apellidos, new { htmlAttributes = new { @class = "form-control" } })
+                @Html.ValidationMessageFor(model => model.Apellidos, "", new { @class = "text-danger" })
+            </div>
+        </div>
+
+        <div class="form-group">
+            <div class="col-md-offset-2 col-md-10">
+                <input type="submit" value="Crear Perfil" class="btn btn-default" />
+            </div>
+        </div>
+    </div>
+}
+
+@section Scripts {
+    @Scripts.Render("~/bundles/jqueryval")
+}
+```
+
+#### PerfilCreado.cshtml
+```html
+@{
+    ViewBag.Title = "Perfil Creado";
+}
+
+<h2>Perfil Creado Exitosamente</h2>
+
+<p>El perfil del aprendiz ha sido creado exitosamente.</p>
+<a href="@Url.Action("CrearPerfil")">Crear otro perfil</a>
+```
+
+### Filtros en la Lista de Aprendices
+Añade una vista para listar y filtrar aprendices.
+
+#### ListaAprendices.cshtml
+```html
+@model IEnumerable<CronosControl_14.Model.Aprendiz>
+
+@{
+    ViewBag.Title = "Lista de Aprendices";
+}
+
+<h2>Lista de Aprendices</h2>
+
+<p>
+    @using (Html.BeginForm("ListaAprendices", "Aprendiz", FormMethod.Get))
+    {
+        <input type="text" name="search" placeholder="Buscar por nombre o apellido" class="form-control" />
+        <input type="submit" value="Buscar" class="btn btn-default" />
+    }
+</p>
+
+<table class="table">
+    <tr>
+        <th>
+            @Html.DisplayNameFor(model => model.Nombre)
+        </th>
+        <th>
+            @Html.DisplayNameFor(model => model.Apellidos)
+        </th>
+        <th>
+            @Html.DisplayNameFor(model => model.Correo)
+        </th>
+        <th>
+            @Html.DisplayNameFor(model => model.Rol)
+        </th>
+    </tr>
+
+@foreach (var item in Model) {
+    <tr>
+        <td>
+            @Html.DisplayFor(modelItem => item.Nombre)
+        </td>
+        <td>
+            @Html.DisplayFor(modelItem => item.Apellidos)
+        </td>
+        <td>
+            @Html.DisplayFor(modelItem => item.Correo)
+        </td>
+        <td>
+            @Html.DisplayFor(modelItem => item.Rol)
+        </td>
+    </tr>
+}
+</table>
+```
+
+### Métodos del Controlador para Listar y Filtrar Aprendices
+
+```csharp
+public ActionResult ListaAprendices(string search)
+{
+    List<Aprendiz> aprendices = new List<Aprendiz>();
+
+    using (SqlConnection connection = new SqlConnection(Conexion))
+    {
+        string query = "SELECT Id, Nombre, Apellidos, Correo, Rol FROM Usuarios WHERE Rol = 'Aprendiz'";
+        
+        if (!string.IsNullOrEmpty(search))
+        {
+            query += " AND (Nombre LIKE @search OR Apellidos LIKE @search)";
+        }
+
+        SqlCommand command = new SqlCommand(query, connection);
+        command.Parameters.AddWithValue("@search", "%" + search + "%");
+
+        connection.Open();
+        SqlDataReader reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            Aprendiz aprendiz = new Aprendiz
+            {
+                Id = (int)reader["Id"],
+                Nombre = reader["Nombre"].ToString(),
+                Apellidos = reader["Apellidos"].ToString(),
+                Correo = reader["Correo"].ToString(),
+                Rol = reader["Rol"].ToString()
+            };
+            aprendices.Add(aprendiz);
+        }
+    }
+
+    return View(aprendices);
+}
+```
+
+### Resumen
+
+Estos pasos permiten crear perfiles de aprendices, generando su correo y contraseña automáticamente, asignándoles el rol de "Aprendiz", y proporcionando la capacidad de listar y filtrar los perfiles. La información se guarda en la base de datos, y las vistas permiten la interacción del usuario con el sistema. Asegúrate de ajustar los detalles según las necesidades específicas de tu aplicación y entorno.
