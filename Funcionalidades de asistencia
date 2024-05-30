@@ -1,0 +1,269 @@
+Para implementar la funcionalidad de gestión de asistencia basada en un código QR, debes realizar varios pasos para manejar la consulta de aprendices, registrar asistencia e inasistencia, y mostrar los resultados con filtros adecuados. Aquí te proporciono una estructura básica y ejemplos de cómo podrías implementarlo en tu controlador `InstructorController` y en las vistas correspondientes.
+
+### Controlador: InstructorController
+
+1. **Consultar Aprendices**
+
+```csharp
+public ActionResult ConsultarAprendices()
+{
+    int instructorId = ObtenerIdInstructor();
+    List<Aprendiz> aprendices = ObtenerAprendices(instructorId);
+    return View(aprendices);
+}
+
+private List<Aprendiz> ObtenerAprendices(int instructorId)
+{
+    List<Aprendiz> aprendices = new List<Aprendiz>();
+
+    using (SqlConnection connection = new SqlConnection(Conexion))
+    {
+        string query = "SELECT id_aprendiz, nombre, apellido FROM aprendices WHERE id_instructor = @InstructorId";
+        SqlCommand command = new SqlCommand(query, connection);
+        command.Parameters.AddWithValue("@InstructorId", instructorId);
+
+        connection.Open();
+        SqlDataReader reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            Aprendiz aprendiz = new Aprendiz
+            {
+                IdAprendiz = (int)reader["id_aprendiz"],
+                Nombre = reader["nombre"].ToString(),
+                Apellido = reader["apellido"].ToString()
+            };
+            aprendices.Add(aprendiz);
+        }
+    }
+
+    return aprendices;
+}
+```
+
+2. **Registrar Asistencia**
+
+```csharp
+public ActionResult RegistrarAsistencia(int idAprendiz)
+{
+    // Registrar asistencia para el aprendiz
+    RegistrarAsistenciaAprendiz(idAprendiz);
+    return RedirectToAction("ConsultarAprendices");
+}
+
+private void RegistrarAsistenciaAprendiz(int idAprendiz)
+{
+    using (SqlConnection connection = new SqlConnection(Conexion))
+    {
+        string query = "INSERT INTO asistencia (id_aprendiz, fecha, estado) VALUES (@IdAprendiz, @Fecha, @Estado)";
+        SqlCommand command = new SqlCommand(query, connection);
+        command.Parameters.AddWithValue("@IdAprendiz", idAprendiz);
+        command.Parameters.AddWithValue("@Fecha", DateTime.Now);
+        command.Parameters.AddWithValue("@Estado", "Asistencia");
+
+        connection.Open();
+        command.ExecuteNonQuery();
+    }
+}
+```
+
+3. **Registrar Inasistencia**
+
+```csharp
+public ActionResult RegistrarInasistencia(int idAprendiz)
+{
+    // Registrar inasistencia para el aprendiz
+    RegistrarInasistenciaAprendiz(idAprendiz);
+    return RedirectToAction("ConsultarAprendices");
+}
+
+private void RegistrarInasistenciaAprendiz(int idAprendiz)
+{
+    using (SqlConnection connection = new SqlConnection(Conexion))
+    {
+        string query = "INSERT INTO asistencia (id_aprendiz, fecha, estado) VALUES (@IdAprendiz, @Fecha, @Estado)";
+        SqlCommand command = new SqlCommand(query, connection);
+        command.Parameters.AddWithValue("@IdAprendiz", idAprendiz);
+        command.Parameters.AddWithValue("@Fecha", DateTime.Now);
+        command.Parameters.AddWithValue("@Estado", "Inasistencia");
+
+        connection.Open();
+        command.ExecuteNonQuery();
+    }
+}
+```
+
+4. **Mostrar Asistencia e Inasistencia con Filtrado**
+
+```csharp
+public ActionResult ConsultarAsistencia(DateTime? fechaInicio, DateTime? fechaFin, string estado)
+{
+    List<Asistencia> asistencias = ObtenerAsistencias(fechaInicio, fechaFin, estado);
+    return View(asistencias);
+}
+
+private List<Asistencia> ObtenerAsistencias(DateTime? fechaInicio, DateTime? fechaFin, string estado)
+{
+    List<Asistencia> asistencias = new List<Asistencia>();
+
+    using (SqlConnection connection = new SqlConnection(Conexion))
+    {
+        string query = "SELECT id_aprendiz, fecha, estado FROM asistencia WHERE 1=1";
+
+        if (fechaInicio.HasValue)
+        {
+            query += " AND fecha >= @FechaInicio";
+        }
+
+        if (fechaFin.HasValue)
+        {
+            query += " AND fecha <= @FechaFin";
+        }
+
+        if (!string.IsNullOrEmpty(estado))
+        {
+            query += " AND estado = @Estado";
+        }
+
+        SqlCommand command = new SqlCommand(query, connection);
+
+        if (fechaInicio.HasValue)
+        {
+            command.Parameters.AddWithValue("@FechaInicio", fechaInicio.Value);
+        }
+
+        if (fechaFin.HasValue)
+        {
+            command.Parameters.AddWithValue("@FechaFin", fechaFin.Value);
+        }
+
+        if (!string.IsNullOrEmpty(estado))
+        {
+            command.Parameters.AddWithValue("@Estado", estado);
+        }
+
+        connection.Open();
+        SqlDataReader reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            Asistencia asistencia = new Asistencia
+            {
+                IdAprendiz = (int)reader["id_aprendiz"],
+                Fecha = (DateTime)reader["fecha"],
+                Estado = reader["estado"].ToString()
+            };
+            asistencias.Add(asistencia);
+        }
+    }
+
+    return asistencias;
+}
+```
+
+### Vistas
+
+1. **ConsultarAprendices.cshtml**
+
+```html
+@model List<Aprendiz>
+
+<h2>Consultar Aprendices</h2>
+
+<table class="table">
+    <thead>
+        <tr>
+            <th>Nombre</th>
+            <th>Apellido</th>
+            <th>Acciones</th>
+        </tr>
+    </thead>
+    <tbody>
+    @foreach (var aprendiz in Model)
+    {
+        <tr>
+            <td>@aprendiz.Nombre</td>
+            <td>@aprendiz.Apellido</td>
+            <td>
+                @Html.ActionLink("Registrar Asistencia", "RegistrarAsistencia", new { idAprendiz = aprendiz.IdAprendiz }) |
+                @Html.ActionLink("Registrar Inasistencia", "RegistrarInasistencia", new { idAprendiz = aprendiz.IdAprendiz })
+            </td>
+        </tr>
+    }
+    </tbody>
+</table>
+```
+
+2. **ConsultarAsistencia.cshtml**
+
+```html
+@model List<Asistencia>
+
+<h2>Consultar Asistencia</h2>
+
+<form method="get" action="@Url.Action("ConsultarAsistencia")">
+    <div class="form-group">
+        <label for="fechaInicio">Fecha Inicio:</label>
+        <input type="date" class="form-control" id="fechaInicio" name="fechaInicio">
+    </div>
+    <div class="form-group">
+        <label for="fechaFin">Fecha Fin:</label>
+        <input type="date" class="form-control" id="fechaFin" name="fechaFin">
+    </div>
+    <div class="form-group">
+        <label for="estado">Estado:</label>
+        <select class="form-control" id="estado" name="estado">
+            <option value="">Todos</option>
+            <option value="Asistencia">Asistencia</option>
+            <option value="Inasistencia">Inasistencia</option>
+        </select>
+    </div>
+    <button type="submit" class="btn btn-primary">Filtrar</button>
+</form>
+
+<table class="table">
+    <thead>
+        <tr>
+            <th>Id Aprendiz</th>
+            <th>Fecha</th>
+            <th>Estado</th>
+        </tr>
+    </thead>
+    <tbody>
+    @foreach (var asistencia in Model)
+    {
+        <tr>
+            <td>@asistencia.IdAprendiz</td>
+            <td>@asistencia.Fecha.ToString("yyyy-MM-dd")</td>
+            <td>@asistencia.Estado</td>
+        </tr>
+    }
+    </tbody>
+</table>
+```
+
+### Modelos
+
+Define los modelos `Aprendiz` y `Asistencia`:
+
+```csharp
+public class Aprendiz
+{
+    public int IdAprendiz { get; set; }
+    public string Nombre { get; set; }
+    public string Apellido { get; set; }
+}
+
+public class Asistencia
+{
+    public int IdAprendiz { get; set; }
+    public DateTime Fecha { get; set; }
+    public string Estado { get; set; }
+}
+```
+
+### Conexión y Utilidades
+
+Asegúrate de ajustar tu conexión a la base de datos y cualquier otra configuración relevante.
+
+### Resumen
+
+Con estos cambios, el instructor puede gestionar la asistencia de los aprendices a través de la consulta, registro de asistencia o inasistencia, y visualización con filtros específicos. La interacción se realiza mediante la generación y escaneo de códigos QR, junto con la manipulación de datos en el backend a través del controlador y las vistas configuradas.
