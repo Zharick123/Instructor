@@ -1,0 +1,202 @@
+Para implementar la funcionalidad de generar reportes de inasistencias, mostrando las faltas injustificadas, y generar alertas para inasistencias consecutivas, sigue estos pasos en tu controlador `InstructorController`. Asegúrate de tener una estructura de datos adecuada en tu base de datos para registrar las asistencias y las inasistencias.
+
+### Controlador: InstructorController
+
+1. **Generar Reporte de Inasistencias**
+   
+   Crear una acción para obtener las inasistencias desde la base de datos y generar un reporte.
+
+```csharp
+public ActionResult GenerarReporteInasistencias(DateTime? fechaInicio, DateTime? fechaFin)
+{
+    var inasistencias = ObtenerInasistencias(fechaInicio, fechaFin);
+    return View(inasistencias);
+}
+
+private List<Inasistencia> ObtenerInasistencias(DateTime? fechaInicio, DateTime? fechaFin)
+{
+    List<Inasistencia> inasistencias = new List<Inasistencia>();
+
+    using (SqlConnection connection = new SqlConnection(Conexion))
+    {
+        string query = "SELECT id_aprendiz, fecha FROM asistencia WHERE estado = 'Inasistencia'";
+
+        if (fechaInicio.HasValue)
+        {
+            query += " AND fecha >= @FechaInicio";
+        }
+
+        if (fechaFin.HasValue)
+        {
+            query += " AND fecha <= @FechaFin";
+        }
+
+        SqlCommand command = new SqlCommand(query, connection);
+
+        if (fechaInicio.HasValue)
+        {
+            command.Parameters.AddWithValue("@FechaInicio", fechaInicio.Value);
+        }
+
+        if (fechaFin.HasValue)
+        {
+            command.Parameters.AddWithValue("@FechaFin", fechaFin.Value);
+        }
+
+        connection.Open();
+        SqlDataReader reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            Inasistencia inasistencia = new Inasistencia
+            {
+                IdAprendiz = (int)reader["id_aprendiz"],
+                Fecha = (DateTime)reader["fecha"]
+            };
+            inasistencias.Add(inasistencia);
+        }
+    }
+
+    return inasistencias;
+}
+```
+
+2. **Mostrar Faltas Injustificadas**
+
+   Crear una vista para mostrar las inasistencias filtradas.
+
+```html
+@model List<Inasistencia>
+
+<h2>Reporte de Inasistencias</h2>
+
+<form method="get" action="@Url.Action("GenerarReporteInasistencias")">
+    <div class="form-group">
+        <label for="fechaInicio">Fecha Inicio:</label>
+        <input type="date" class="form-control" id="fechaInicio" name="fechaInicio">
+    </div>
+    <div class="form-group">
+        <label for="fechaFin">Fecha Fin:</label>
+        <input type="date" class="form-control" id="fechaFin" name="fechaFin">
+    </div>
+    <button type="submit" class="btn btn-primary">Generar Reporte</button>
+</form>
+
+<table class="table">
+    <thead>
+        <tr>
+            <th>Id Aprendiz</th>
+            <th>Fecha</th>
+        </tr>
+    </thead>
+    <tbody>
+    @foreach (var inasistencia in Model)
+    {
+        <tr>
+            <td>@inasistencia.IdAprendiz</td>
+            <td>@inasistencia.Fecha.ToString("yyyy-MM-dd")</td>
+        </tr>
+    }
+    </tbody>
+</table>
+```
+
+3. **Generar Contador de Faltas Injustificadas**
+
+   Crear un método para contar las faltas injustificadas por aprendiz.
+
+```csharp
+private Dictionary<int, int> ContarFaltasInjustificadas(List<Inasistencia> inasistencias)
+{
+    Dictionary<int, int> contadorFaltas = new Dictionary<int, int>();
+
+    foreach (var inasistencia in inasistencias)
+    {
+        if (!contadorFaltas.ContainsKey(inasistencia.IdAprendiz))
+        {
+            contadorFaltas[inasistencia.IdAprendiz] = 0;
+        }
+        contadorFaltas[inasistencia.IdAprendiz]++;
+    }
+
+    return contadorFaltas;
+}
+```
+
+4. **Generar Alertas de Inasistencias Consecutivas**
+
+   Crear métodos para generar alertas para 2 y 3 o más inasistencias seguidas.
+
+```csharp
+private void GenerarAlertas(List<Inasistencia> inasistencias)
+{
+    var inasistenciasPorAprendiz = AgruparInasistenciasPorAprendiz(inasistencias);
+
+    foreach (var item in inasistenciasPorAprendiz)
+    {
+        var inasistenciasOrdenadas = item.Value.OrderBy(i => i.Fecha).ToList();
+        int contadorConsecutivas = 0;
+        DateTime? ultimaFecha = null;
+
+        foreach (var inasistencia in inasistenciasOrdenadas)
+        {
+            if (ultimaFecha.HasValue && (inasistencia.Fecha - ultimaFecha.Value).TotalDays == 1)
+            {
+                contadorConsecutivas++;
+            }
+            else
+            {
+                contadorConsecutivas = 1;
+            }
+
+            if (contadorConsecutivas == 2)
+            {
+                // Generar alerta de 2 inasistencias seguidas
+                // Código para manejar la alerta
+            }
+            else if (contadorConsecutivas >= 3)
+            {
+                // Generar alerta de 3 o más inasistencias seguidas
+                // Código para manejar la alerta
+            }
+
+            ultimaFecha = inasistencia.Fecha;
+        }
+    }
+}
+
+private Dictionary<int, List<Inasistencia>> AgruparInasistenciasPorAprendiz(List<Inasistencia> inasistencias)
+{
+    return inasistencias.GroupBy(i => i.IdAprendiz).ToDictionary(g => g.Key, g => g.ToList());
+}
+```
+
+### Modelos
+
+Define el modelo `Inasistencia`:
+
+```csharp
+public class Inasistencia
+{
+    public int IdAprendiz { get; set; }
+    public DateTime Fecha { get; set; }
+}
+```
+
+### Implementación
+
+1. Llama al método `GenerarAlertas` dentro de la acción `GenerarReporteInasistencias` para evaluar las inasistencias y generar las alertas correspondientes.
+
+```csharp
+public ActionResult GenerarReporteInasistencias(DateTime? fechaInicio, DateTime? fechaFin)
+{
+    var inasistencias = ObtenerInasistencias(fechaInicio, fechaFin);
+    GenerarAlertas(inasistencias);
+    return View(inasistencias);
+}
+```
+
+2. Crea las alertas según tu lógica de negocio, ya sea enviando correos, mostrando mensajes en la interfaz de usuario, o cualquier otro método adecuado.
+
+### Resumen
+
+Con estos cambios, el sistema podrá generar un reporte de inasistencias, contar las faltas injustificadas por aprendiz, y generar alertas para inasistencias consecutivas (2 y 3 o más). Asegúrate de ajustar la lógica de alertas según las necesidades específicas de tu aplicación.
