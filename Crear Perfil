@@ -1,0 +1,144 @@
+Para implementar la funcionalidad de crear un perfil de aprendiz con la generación de correo, contraseña, y asignación de rol, podemos seguir los siguientes pasos. A continuación, se presenta un ejemplo de cómo hacerlo en el controlador `InstructorController`:
+
+1. Crear una vista para ingresar los datos personales del aprendiz.
+2. Crear un método para generar el correo del aprendiz.
+3. Crear un método para generar la contraseña del aprendiz.
+4. Crear un método para asignar el rol del aprendiz.
+5. Crear un método en el controlador para manejar la creación del perfil del aprendiz.
+
+### Paso 1: Crear la vista para ingresar los datos personales del aprendiz
+
+Primero, creamos una vista llamada `CrearPerfilAprendiz.cshtml` en la carpeta `Views/Instructor`. Esta vista permitirá al instructor ingresar los datos del aprendiz.
+
+```html
+@model CronosControl_14.Model.AprendizViewModel
+
+@{
+    ViewBag.Title = "Crear Perfil Aprendiz";
+}
+
+<h2>Crear Perfil Aprendiz</h2>
+
+@using (Html.BeginForm("CrearPerfilAprendiz", "Instructor", FormMethod.Post, new { enctype = "multipart/form-data" }))
+{
+    <div class="form-group">
+        @Html.LabelFor(model => model.Nombre, "Nombre")
+        @Html.TextBoxFor(model => model.Nombre, new { @class = "form-control" })
+    </div>
+    <div class="form-group">
+        @Html.LabelFor(model => model.Apellido, "Apellido")
+        @Html.TextBoxFor(model => model.Apellido, new { @class = "form-control" })
+    </div>
+    <div class="form-group">
+        @Html.LabelFor(model => model.FechaNacimiento, "Fecha de Nacimiento")
+        @Html.TextBoxFor(model => model.FechaNacimiento, "{0:yyyy-MM-dd}", new { @class = "form-control", type = "date" })
+    </div>
+    <button type="submit" class="btn btn-primary">Crear Perfil</button>
+}
+```
+
+### Paso 2: Crear el modelo `AprendizViewModel`
+
+Creamos un modelo `AprendizViewModel` en la carpeta `Models`.
+
+```csharp
+namespace CronosControl_14.Model
+{
+    public class AprendizViewModel
+    {
+        public string Nombre { get; set; }
+        public string Apellido { get; set; }
+        public DateTime FechaNacimiento { get; set; }
+    }
+}
+```
+
+### Paso 3: Crear métodos para generar correo, contraseña, y asignar rol
+
+En el controlador `InstructorController`, agregamos los métodos para generar el correo, la contraseña y asignar el rol del aprendiz.
+
+```csharp
+public string GenerarCorreoAprendiz(string nombre, string apellido)
+{
+    string dominio = "miinstitucion.edu";
+    string correo = $"{nombre.ToLower()}.{apellido.ToLower()}@{dominio}";
+    return correo;
+}
+
+public string GenerarContraseña()
+{
+    return Guid.NewGuid().ToString().Substring(0, 8); // Genera una contraseña de 8 caracteres
+}
+
+public void AsignarRolAprendiz(int idUsuario)
+{
+    using (SqlConnection connection = new SqlConnection(Conexion))
+    {
+        string query = "INSERT INTO roles_usuarios (id_usuario, id_rol) VALUES (@idUsuario, @idRol)";
+        SqlCommand command = new SqlCommand(query, connection);
+        command.Parameters.AddWithValue("@idUsuario", idUsuario);
+        command.Parameters.AddWithValue("@idRol", 3); // 3 asumiendo que es el ID del rol de aprendiz
+
+        connection.Open();
+        command.ExecuteNonQuery();
+    }
+}
+```
+
+### Paso 4: Crear el método en el controlador para manejar la creación del perfil del aprendiz
+
+Agregamos un nuevo método en el controlador para manejar la creación del perfil del aprendiz:
+
+```csharp
+[HttpPost]
+public ActionResult CrearPerfilAprendiz(AprendizViewModel model)
+{
+    if (ModelState.IsValid)
+    {
+        string correo = GenerarCorreoAprendiz(model.Nombre, model.Apellido);
+        string contraseña = GenerarContraseña();
+
+        using (SqlConnection connection = new SqlConnection(Conexion))
+        {
+            string query = @"
+                INSERT INTO usuarios (nombre, apellido, correo, contraseña, fecha_nacimiento, id_rol)
+                VALUES (@nombre, @apellido, @correo, @contraseña, @fechaNacimiento, @idRol);
+                SELECT SCOPE_IDENTITY();";
+
+            SqlCommand command = new SqlCommand(query, connection);
+            command.Parameters.AddWithValue("@nombre", model.Nombre);
+            command.Parameters.AddWithValue("@apellido", model.Apellido);
+            command.Parameters.AddWithValue("@correo", correo);
+            command.Parameters.AddWithValue("@contraseña", contraseña); // Aquí se debería cifrar la contraseña antes de guardarla
+            command.Parameters.AddWithValue("@fechaNacimiento", model.FechaNacimiento);
+            command.Parameters.AddWithValue("@idRol", 3); // Asumiendo que 3 es el ID del rol de aprendiz
+
+            connection.Open();
+            int idUsuario = Convert.ToInt32(command.ExecuteScalar());
+
+            AsignarRolAprendiz(idUsuario);
+        }
+
+        ViewBag.Message = "Perfil de aprendiz creado exitosamente.";
+        return View();
+    }
+
+    return View(model);
+}
+```
+
+### Paso 5: Añadir la ruta para la nueva acción en `RouteConfig.cs`
+
+En el archivo `RouteConfig.cs`, asegurarse de que la ruta para la acción `CrearPerfilAprendiz` esté configurada.
+
+```csharp
+routes.MapRoute(
+    name: "CrearPerfilAprendiz",
+    url: "{controller}/{action}/{id}",
+    defaults: new { controller = "Instructor", action = "CrearPerfilAprendiz", id = UrlParameter.Optional }
+);
+```
+
+### Resumen
+
+Con estos pasos, se ha creado la funcionalidad de crear un perfil de aprendiz, generando automáticamente el correo y la contraseña, y asignando el rol correspondiente. Asegúrese de ajustar los valores y las configuraciones según las necesidades específicas de su proyecto.
