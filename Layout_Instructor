@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>@ViewBag.Title - CronosControl</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet" />
+    <style>
+        body {
+            padding-top: 56px;
+            font-family: Arial, sans-serif;
+        }
+
+        .navbar {
+            margin-bottom: 20px;
+            background-color: #003366; /* Color institucional */
+            color: #ffffff;
+        }
+
+        .navbar-brand, .nav-link {
+            color: #ffffff !important;
+        }
+
+        .navbar-brand {
+            font-weight: bold;
+        }
+
+        .nav-link:hover {
+            color: #ffcc00 !important; /* Color de acento */
+        }
+
+        .footer {
+            background-color: #003366; /* Color institucional */
+            color: #ffffff;
+            padding: 10px 0;
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+            text-align: center;
+        }
+
+        .container {
+            margin-bottom: 60px; /* espacio para el footer */
+        }
+
+        .jumbotron {
+            background-color: #e9ecef;
+            padding: 2rem 1rem;
+        }
+
+        .form-group label {
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark fixed-top">
+        <a class="navbar-brand" href="#">CronosControl</a>
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <ul class="navbar-nav mr-auto">
+                <li class="nav-item">
+                    <a class="nav-link" href="@Url.Action("Index", "Instructor")">Inicio</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="@Url.Action("Fichas", "Instructor")">Fichas</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="@Url.Action("ProgramasFormacion", "Instructor")">Programas Formación</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="@Url.Action("GenerarQR", "Instructor")">Generar QR</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="@Url.Action("EstablecerDuracionQR", "Instructor")">Establecer Duración QR</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="@Url.Action("RegistrarAsistencia", "Instructor")">Registrar Asistencias</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="@Url.Action("EstablecerDiasParaExcusa", "Instructor")">Tiempo de excusas</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="@Url.Action("SubirExcusa", "Instructor")">Subir excusas</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="@Url.Action("VerExcusas", "Instructor")">Ver excusas</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="@Url.Action("VerReporte", "Instructor")">Ver Reporte</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="@Url.Action("CrearPerfil", "Instructor")">Crear Perfil Aprendiz</a>
+                </li>
+            </ul>
+            <ul class="navbar-nav ml-auto">
+                <li class="nav-item">
+                    <a class="nav-link" href="@Url.Action("CerrarSesion", "Instructor")">Cerrar Sesión</a>
+                </li>
+            </ul>
+        </div>
+    </nav>
+    <div class="container">
+        @RenderBody()
+    </div>
+    <div class="footer">
+        <p>&copy; @DateTime.Now.Year - CronosControl. Todos los derechos reservados.</p>
+    </div>
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    @RenderSection("Scripts", required: false)
+</body>
+</html>
