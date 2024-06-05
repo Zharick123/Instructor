@@ -1,0 +1,95 @@
+@{
+    ViewBag.Title = "Inicio";
+    Layout = "~/Views/Shared/_Layout-Instructor.cshtml";
+}
+
+<h2>Bienvenido, @User.Identity.Name</h2>
+
+<div class="row">
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Fichas</h5>
+                <p class="card-text">Consulta las fichas asociadas a tu perfil.</p>
+                <a href="@Url.Action("Fichas", "Instructor")" class="btn btn-primary">Ver Fichas</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Programas de Formación</h5>
+                <p class="card-text">Consulta los programas de formación en los que participas.</p>
+                <a href="@Url.Action("ProgramasFormacion", "Instructor")" class="btn btn-primary">Ver Programas</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Generar Reporte de Inasistencias</h5>
+                <p class="card-text">Genera un reporte de inasistencias de tus clases.</p>
+                <a href="@Url.Action("GenerarReporteInasistencias", "Instructor")" class="btn btn-primary">Generar Reporte</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4 mt-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Generar Código QR</h5>
+                <p class="card-text">Genera un código QR para el registro de asistencia.</p>
+                <a href="@Url.Action("GenerarQR", "Instructor")" class="btn btn-primary">Generar QR</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Generar Reporte de Inasistencias</h5>
+                <p class="card-text">Establecer la duracion exacta de cada una de tus clases.</p>
+                <a href="@Url.Action("EstablecerDuracionQR", "Instructor")" class="btn btn-primary">Establecer la duacion del QR</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Registrar Asistencia</h5>
+                <p class="card-text">Registra la asistencia de tus clases.</p>
+                <a href="@Url.Action("RegistrarAsistencia", "Instructor")" class="btn btn-primary">Registrar asistencia</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<h2>Reporte de Inasistencias</h2>
+<p>Reporte Inasistencias: @ViewBag.ReporteInasistencias</p>
+
+<h2>Datos de Google Sheets</h2>
+<table border="1">
+    <thead>
+        <tr>
+            @if (ViewBag.GoogleSheetsData != null && ViewBag.GoogleSheetsData.Count > 0)
+            {
+                foreach (var header in ViewBag.GoogleSheetsData[0])
+                {
+                    <th>@header</th>
+                }
+            }
+        </tr>
+    </thead>
+    <tbody>
+        @if (ViewBag.GoogleSheetsData != null)
+        {
+            foreach (var row in ViewBag.GoogleSheetsData.Skip(1))
+            {
+                <tr>
+                    @foreach (var cell in row)
+                    {
+                        <td>@cell</td>
+                    }
+                </tr>
+            }
+        }
+    </tbody>
+</table>
