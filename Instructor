@@ -1,0 +1,667 @@
+using System;
+using System.Collections.Generic;
+using System.Web.Mvc;
+using System.IO;
+using QRCoder;
+using System.Data.SqlClient;
+using System.Drawing;
+using CronosControl_14.Model;
+using CrystalDecisions.CrystalReports.Engine;
+using CrystalDecisions.Shared;
+using CrystalDecisions.Web;
+using System.Data;
+using System.Web;
+using System.Linq;
+
+namespace CronosControl_14.Controllers
+{
+    public class InstructorController : Controller
+    {
+        private static string currentQRData;
+        private static DateTime lastQRUpdateTime;
+        private static bool qrEnabled = true;
+        private static TimeSpan? classStartTime;
+        private static TimeSpan? classEndTime;
+        private static int diasParaExcusa = 3; // Default valu
+
+        string Conexion = "data source=DESKTOP-HPRJHVG;initial catalog=proyectoASIS;integrated security=True;MultipleActiveResultSets=True;";
+
+        // GET: Instructor
+        public ActionResult Index()
+        {
+            int ReporteInasistencias;
+
+            using (SqlConnection connection = new SqlConnection(Conexion))
+            {
+                string query = "SELECT COUNT(*) FROM reporte WHERE tipo_reporte = 'Inasistencia'";
+
+                SqlCommand comando = new SqlCommand(query, connection);
+                connection.Open();
+
+                ReporteInasistencias = (int)comando.ExecuteScalar();
+            }
+
+            ViewBag.ReporteInasistencias = ReporteInasistencias;
+            return View();
+        }
+
+        public ActionResult Fichas()
+        {
+            int instructorId = ObtenerIdInstructor();
+            List<Ficha> fichas = ObtenerFichas(instructorId);
+
+            return View(fichas);
+        }
+
+        public ActionResult ProgramasFormacion()
+        {
+            int instructorId = ObtenerIdInstructor();
+            List<ProgramaFormacion> programas = ObtenerProgramasFormacion(instructorId);
+
+            return View(programas);
+        }
+
+        private List<ProgramaFormacion> ObtenerProgramasFormacion(int instructorId)
+        {
+            List<ProgramaFormacion> programas = new List<ProgramaFormacion>();
+
+            using (SqlConnection connection = new SqlConnection(Conexion))
+            {
+                string query = "SELECT id_programa_formacion, tipo_programa, nombre_programa, fecha_registro, numero_ficha, id_competencia, id_usuario ";
+                query += "FROM programa_formacion WHERE id_usuario = @InstructorId";
+
+                SqlCommand command = new SqlCommand(query, connection);
+                command.Parameters.AddWithValue("@InstructorId", instructorId);
+
+                connection.Open();
+                SqlDataReader reader = command.ExecuteReader();
+                while (reader.Read())
+                {
+                    ProgramaFormacion programa = new ProgramaFormacion
+                    {
+                        id_programa_formacion = (int)reader["id_programa_formacion"],
+                        tipo_programa = reader["tipo_programa"].ToString(),
+                        nombre_programa = reader["nombre_programa"].ToString(),
+                        fecha_registro = (DateTime)reader["fecha_registro"],
+                        numero_ficha = (int)reader["numero_ficha"],
+                        id_competencia = (int)reader["id_competencia"],
+                        id_usuario = (int)reader["id_usuario"]
+                    };
+                    programas.Add(programa);
+                }
+            }
+
+            return programas;
+        }
+
+        public ActionResult EstablecerDuracionQR()
+        {
+            return View();
+        }
+
+        public ActionResult GenerarReporteInasistencias()
+        {
+            return View();
+        }
+
+        private List<ReporteInasistencias> ObtenerReporteInasistencias(DateTime fechaInicio, DateTime fechaFin)
+        {
+            List<ReporteInasistencias> reporte = new List<ReporteInasistencias>();
+
+            using (SqlConnection connection = new SqlConnection(Conexion))
+            {
+                string query = @"
+                SELECT id_reporte, tipo_reporte, COUNT(*) AS cantidad_reporte, fecha_registro, codigo_asistencia, id_usuario
+                FROM reporte
+                WHERE fecha_registro >= @FechaInicio AND fecha_registro <= @FechaFin
+                GROUP BY id_reporte, fecha_registro, tipo_reporte, codigo_asistencia, id_usuario";
+
+                SqlCommand command = new SqlCommand(query, connection);
+                command.Parameters.AddWithValue("@FechaInicio", fechaInicio);
+                command.Parameters.AddWithValue("@FechaFin", fechaFin);
+
+                connection.Open();
+                SqlDataReader reader = command.ExecuteReader();
+                while (reader.Read())
+                {
+                    ReporteInasistencias item = new ReporteInasistencias
+                    {
+                        id_reporte = (int)reader["id_reporte"],
+                        tipo_reporte = reader["tipo_reporte"].ToString(),
+                        cantidad_reporte = (int)reader["cantidad_reporte"],
+                        fecha_registro = (DateTime)reader["fecha_registro"],
+                        codigo_asistencia = (int)reader["codigo_asistencia"],
+                        id_usuario = (int)reader["id_usuario"],
+                    };
+                    reporte.Add(item);
+                }
+            }
+
+            return reporte;
+        }
+
+        public ActionResult VerReporte(DateTime fechaInicio, DateTime fechaFin)
+        {
+            var reporteInasistencias = ObtenerReporteInasistencias(fechaInicio, fechaFin);
+            ReportDocument reportDocument = new ReportDocument();
+            reportDocument.Load(Server.MapPath("~/Reports/ReporteInasistencias.rpt"));
+            reportDocument.SetDataSource(reporteInasistencias);
+
+            Stream stream = reportDocument.ExportToStream(ExportFormatType.PortableDocFormat);
+            stream.Seek(0, SeekOrigin.Begin);
+
+            return File(stream, "application/pdf");
+        }
+
+
+        public ActionResult RegistrarAsistencia()
+        {
+            return View();
+        }
+
+        public ActionResult GenerarQR()
+        {
+            if (classStartTime.HasValue && classEndTime.HasValue)
+            {
+                TimeSpan currentTime = DateTime.Now.TimeOfDay;
+                if (currentTime < classStartTime.Value || currentTime > classEndTime.Value)
+                {
+                    qrEnabled = false;
+                }
+                else
+                {
+                    qrEnabled = true;
+                }
+            }
+
+            if (currentQRData == null || (DateTime.Now - lastQRUpdateTime).TotalMinutes > 60 || !qrEnabled)
+            {
+                string googleFormUrl = "https://docs.google.com/forms/d/e/1FAIpQLScoP2XCRy2oDlWi0ujw8Q8nLOoiTla-_snELeiv30jhMc42BQ/viewform?usp=sf_link" + Guid.NewGuid().ToString();
+                currentQRData = googleFormUrl;
+                lastQRUpdateTime = DateTime.Now;
+                qrEnabled = true;
+
+                GuardarConfiguracionQR(currentQRData, lastQRUpdateTime, qrEnabled);
+            }
+
+            if (!qrEnabled)
+            {
+                return new HttpStatusCodeResult(403, "QR deshabilitado fuera de las horas de clase.");
+            }
+
+            QRCodeGenerator qrGenerator = new QRCodeGenerator();
+            QRCodeData qrCodeData = qrGenerator.CreateQrCode(currentQRData, QRCodeGenerator.ECCLevel.Q);
+            QRCode qrCode = new QRCode(qrCodeData);
+            Bitmap qrCodeImage = qrCode.GetGraphic(10);
+
+            using (MemoryStream stream = new MemoryStream())
+            {
+                qrCodeImage.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
+                byte[] imageBytes = stream.ToArray();
+                return File(imageBytes, "image/png");
+            }
+        }
+        [HttpPost]
+        public JsonResult DeshabilitarQR()
+        {
+            qrEnabled = false;
+            ActualizarConfiguracionQR(currentQRData, lastQRUpdateTime, qrEnabled);
+            return Json(new { success = true, message = "Código QR deshabilitado." });
+        }
+
+        [HttpPost]
+        public JsonResult HabilitarQR()
+        {
+            GenerarQR();// Generar el código QR automáticamente al habilitar
+            qrEnabled = true;
+            ActualizarConfiguracionQR(currentQRData, lastQRUpdateTime, qrEnabled);
+            return Json(new { success = true, message = "Código QR habilitado." });
+        }
+
+        private void ActualizarConfiguracionQR(string qrData, DateTime updateTime, bool enabled)
+        {
+            using (SqlConnection connection = new SqlConnection(Conexion))
+            {
+                string query = "UPDATE ConfiguracionQR SET LastUpdateTime = @LastUpdateTime, QREnabled = @QREnabled WHERE QRData = @QRData";
+                SqlCommand command = new SqlCommand(query, connection);
+                command.Parameters.AddWithValue("@QRData", qrData);
+                command.Parameters.AddWithValue("@LastUpdateTime", updateTime);
+                command.Parameters.AddWithValue("@QREnabled", enabled);
+
+                connection.Open();
+                command.ExecuteNonQuery();
+            }
+        }
+        private void GuardarConfiguracionQR(string qrData, DateTime updateTime, bool enabled)
+        {
+            using (SqlConnection connection = new SqlConnection(Conexion))
+            {
+                string query = "INSERT INTO ConfiguracionQR (QRData, LastUpdateTime, QREnabled) VALUES (@QRData, @LastUpdateTime, @QREnabled)";
+                SqlCommand command = new SqlCommand(query, connection);
+                command.Parameters.AddWithValue("@QRData", qrData);
+                command.Parameters.AddWithValue("@LastUpdateTime", updateTime);
+                command.Parameters.AddWithValue("@QREnabled", enabled);
+
+                connection.Open();
+                command.ExecuteNonQuery();
+            }
+        }
+        [HttpPost]
+        public JsonResult GuardarHorasClase(string classStartTime, string classEndTime)
+        {
+            InstructorController.classStartTime = TimeSpan.Parse(classStartTime);
+            InstructorController.classEndTime = TimeSpan.Parse(classEndTime);
+
+            return Json(new { success = true, message = "Horas de clase guardadas." });
+        }
+        [HttpGet]
+        public ActionResult EstablecerDiasParaExcusa()
+        {
+            return View();
+        }
+
+        [HttpPost]
+        public JsonResult EstablecerDiasParaExcusa(int dias)
+        {
+            int instructorId = ObtenerIdInstructor();
+
+            using (SqlConnection connection = new SqlConnection(Conexion))
+            {
+                string query = "UPDATE usuarios SET dias_para_excusa = @dias WHERE id_usuario = @instructorId";
+                SqlCommand command = new SqlCommand(query, connection);
+                command.Parameters.AddWithValue("@dias", dias);
+                command.Parameters.AddWithValue("@instructorId", instructorId);
+
+                connection.Open();
+                command.ExecuteNonQuery();
+            }
+
+            return Json(new { success = true, message = "Días para subir excusa actualizados." });
+        }
+        public ActionResult SubirExcusa()
+        {
+            return View();
+        }
+
+        [HttpPost]
+        public ActionResult SubirExcusa(DateTime fechaFalta, HttpPostedFileBase excusaFile)
+        {
+            // Validar que la excusa se suba dentro del plazo de 3 días
+            if ((DateTime.Now - fechaFalta).Days > 3)
+            {
+                ViewBag.Message = "El plazo de 3 días ha pasado, no se puede subir la excusa.";
+                return View();
+            }
+
+            if (excusaFile != null && excusaFile.ContentLength > 0)
+            {
+                if (Path.GetExtension(excusaFile.FileName).ToLower() != ".pdf")
+                {
+                    ViewBag.Message = "Por favor, suba solo archivos PDF.";
+                    return View();
+                }
+
+                string directoryPath = Server.MapPath("~/Excusas/");
+                if (!Directory.Exists(directoryPath))
+                {
+                    Directory.CreateDirectory(directoryPath);
+                }
+
+                string filePath = Path.Combine(directoryPath, Path.GetFileName(excusaFile.FileName));
+                excusaFile.SaveAs(filePath);
+
+                using (SqlConnection connection = new SqlConnection(Conexion))
+                {
+                    string query = "INSERT INTO excusas (id_usuario, fecha_falta, ruta_excusa, fecha_subida, estado, codigo_asistencia) VALUES (@idUsuario, @fechaFalta, @rutaExcusa, GETDATE(), 'pendiente', @codigoAsistencia)";
+                    SqlCommand command = new SqlCommand(query, connection);
+                    int idUsuario = ObtenerIdInstructor();
+                    int codigoAsistencia = ObtenerCodigoAsistencia(idUsuario, fechaFalta);
+
+                    command.Parameters.AddWithValue("@idUsuario", idUsuario);
+                    command.Parameters.AddWithValue("@fechaFalta", fechaFalta);
+                    command.Parameters.AddWithValue("@rutaExcusa", filePath);
+                    command.Parameters.AddWithValue("@codigoAsistencia", codigoAsistencia);
+
+                    connection.Open();
+                    command.ExecuteNonQuery();
+                }
+                ViewBag.Message = "Excusa subida exitosamente.";
+            }
+            else
+            {
+                ViewBag.Message = "Error al subir la excusa.";
+            }
+
+            return View();
+        }
+        public ActionResult GenerarReporteInasistencias(DateTime? fechaInicio, DateTime? fechaFin)
+        {
+            var inasistencias = ObtenerInasistencias(fechaInicio, fechaFin);
+            GenerarAlertas(inasistencias);
+            return View(inasistencias);
+        }
+
+        private List<Inasistencia> ObtenerInasistencias(DateTime? fechaInicio, DateTime? fechaFin)
+        {
+            List<Inasistencia> inasistencias = new List<Inasistencia>();
+
+            using (SqlConnection connection = new SqlConnection(Conexion))
+            {
+                string query = "SELECT id_aprendiz, fecha FROM asistencia WHERE estado = 'Inasistencia'";
+
+                if (fechaInicio.HasValue)
+                {
+                    query += " AND fecha >= @FechaInicio";
+                }
+
+                if (fechaFin.HasValue)
+                {
+                    query += " AND fecha <= @FechaFin";
+                }
+
+                SqlCommand command = new SqlCommand(query, connection);
+
+                if (fechaInicio.HasValue)
+                {
+                    command.Parameters.AddWithValue("@FechaInicio", fechaInicio.Value);
+                }
+
+                if (fechaFin.HasValue)
+                {
+                    command.Parameters.AddWithValue("@FechaFin", fechaFin.Value);
+                }
+
+                connection.Open();
+                SqlDataReader reader = command.ExecuteReader();
+                while (reader.Read())
+                {
+                    Inasistencia inasistencia = new Inasistencia
+                    {
+                        IdAprendiz = (int)reader["id_aprendiz"],
+                        Fecha = (DateTime)reader["fecha"]
+                    };
+                    inasistencias.Add(inasistencia);
+                }
+            }
+
+            return inasistencias;
+        }
+        private Dictionary<int, int> ContarFaltasInjustificadas(List<Inasistencia> inasistencias)
+        {
+            Dictionary<int, int> contadorFaltas = new Dictionary<int, int>();
+
+            foreach (var inasistencia in inasistencias)
+            {
+                if (!contadorFaltas.ContainsKey(inasistencia.IdAprendiz))
+                {
+                    contadorFaltas[inasistencia.IdAprendiz] = 0;
+                }
+                contadorFaltas[inasistencia.IdAprendiz]++;
+            }
+
+            return contadorFaltas;
+        }
+        private void GenerarAlertas(List<Inasistencia> inasistencias)
+        {
+            var inasistenciasPorAprendiz = AgruparInasistenciasPorAprendiz(inasistencias);
+
+            foreach (var item in inasistenciasPorAprendiz)
+            {
+                var inasistenciasOrdenadas = item.Value.OrderBy(i => i.Fecha).ToList();
+                int contadorConsecutivas = 0;
+                DateTime? ultimaFecha = null;
+
+                foreach (var inasistencia in inasistenciasOrdenadas)
+                {
+                    if (ultimaFecha.HasValue && (inasistencia.Fecha - ultimaFecha.Value).TotalDays == 1)
+                    {
+                        contadorConsecutivas++;
+                    }
+                    else
+                    {
+                        contadorConsecutivas = 1;
+                    }
+
+                    if (contadorConsecutivas == 2)
+                    {
+                        // Generar alerta de 2 inasistencias seguidas
+                        // Código para manejar la alerta
+                    }
+                    else if (contadorConsecutivas >= 3)
+                    {
+                        // Generar alerta de 3 o más inasistencias seguidas
+                        // Código para manejar la alerta
+                    }
+
+                    ultimaFecha = inasistencia.Fecha;
+                }
+            }
+        }
+
+        private Dictionary<int, List<Inasistencia>> AgruparInasistenciasPorAprendiz(List<Inasistencia> inasistencias)
+        {
+            return inasistencias.GroupBy(i => i.IdAprendiz).ToDictionary(g => g.Key, g => g.ToList());
+        }
+
+        public ActionResult VerExcusas()
+        {
+            int instructorId = ObtenerIdInstructor();
+            List<Excusa> excusas = ObtenerExcusas(instructorId);
+            return View(excusas);
+        }
+
+        private List<Excusa> ObtenerExcusas(int instructorId)
+        {
+            List<Excusa> excusas = new List<Excusa>();
+
+            using (SqlConnection connection = new SqlConnection(Conexion))
+            {
+                string query = "SELECT id_excusa, tipo_excusa, fecha_registro, archivo_PDF FROM excusa WHERE id_usuario = @idUsuario";
+                SqlCommand command = new SqlCommand(query, connection);
+                command.Parameters.AddWithValue("@idUsuario", instructorId);
+
+                connection.Open();
+                SqlDataReader reader = command.ExecuteReader();
+                while (reader.Read())
+                {
+                    Excusa excusa = new Excusa
+                    {
+                        IdExcusa = (int)reader["id_excusa"],
+                        TipoExcusa = reader["tipo_excusa"].ToString(),
+                        FechaRegistro = (DateTime)reader["fecha_registro"],
+                        ArchivoPDF = reader["archivo_PDF"].ToString()
+                    };
+                    excusas.Add(excusa);
+                }
+            }
+
+            return excusas;
+        }
+        private List<Ficha> ObtenerFichas(int instructorId)
+        {
+            List<Ficha> fichas = new List<Ficha>();
+
+            using (SqlConnection connection = new SqlConnection(Conexion))
+            {
+                string query = @"SELECT ficha.numero_ficha, tipo_ficha, jornada, estado_ficha, ficha.fecha_registro, foto_ficha
+                                FROM usuarios, ficha
+                                WHERE usuarios.id_usuario = @id_usuario AND usuarios.numero_ficha = ficha.numero_ficha ";
+                SqlCommand command = new SqlCommand(query, connection);
+                command.Parameters.AddWithValue("@id_usuario", instructorId);
+
+                connection.Open();
+                SqlDataReader reader = command.ExecuteReader();
+                while (reader.Read())
+                {
+                    Ficha ficha = new Ficha
+                    {
+                        NumeroFicha = reader["numero_ficha"].ToString(),
+                        TipoFicha = reader["tipo_ficha"].ToString(),
+                        Jornada = reader["jornada"].ToString(),
+                        FotoFicha = reader["foto_ficha"].ToString(),
+                        EstadoFicha = reader["estado_ficha"].ToString(),
+                        FechaRegistro = (DateTime)reader["fecha_registro"]
+                    };
+                    fichas.Add(ficha);
+                }
+            }
+
+            return fichas;
+        }
+        private int ObtenerCodigoAsistencia(int idUsuario, DateTime fecha)
+        {
+            int codigoAsistencia = 0; // Valor predeterminado o código de asistencia nulo
+
+            // Lógica para obtener el código de asistencia desde la base de datos
+            using (SqlConnection connection = new SqlConnection(Conexion))
+            {
+                string query = @"
+                  SELECT TOP 1 codigo_asistencia 
+                  FROM asistencia 
+                  WHERE id_usuario = @IdUsuario AND fecha = @Fecha
+                  ORDER BY fecha DESC"; // Ordenar por fecha descendente para obtener el más reciente si hay varios
+
+                SqlCommand command = new SqlCommand(query, connection);
+                command.Parameters.AddWithValue("@IdUsuario", idUsuario);
+                command.Parameters.AddWithValue("@Fecha", fecha);
+
+                connection.Open();
+                var result = command.ExecuteScalar();
+                if (result != DBNull.Value && result != null)
+                {
+                    codigoAsistencia = Convert.ToInt32(result);
+                }
+            }
+
+            return codigoAsistencia;
+        }
+
+        public ActionResult CrearPerfil()
+        {
+            return View();
+        }
+
+        [HttpPost]
+        public ActionResult CrearPerfil(Aprendiz aprendiz)
+        {
+            if (ModelState.IsValid)
+            {
+                aprendiz.correo = GenerarCorreo(aprendiz.nombre, aprendiz.apellido);
+                aprendiz.contraseña = GenerarContraseña();
+                aprendiz.tipo_usuario = "Aprendiz";
+                aprendiz.fecha_registro = DateTime.Now;
+
+                using (SqlConnection connection = new SqlConnection(Conexion))
+                {
+                    string query = "INSERT INTO usuarios (telefono, tipo_usuario, nombre, apellido, correo, contraseña, fecha_registro) VALUES (@Telefono, @TipoUsuario, @Nombre, @Apellido, @Correo, @Contraseña, @FechaRegistro)";
+                    SqlCommand command = new SqlCommand(query, connection);
+                    command.Parameters.AddWithValue("@telefono", aprendiz.telefono);
+                    command.Parameters.AddWithValue("@tipo_usuario", aprendiz.tipo_usuario);
+                    command.Parameters.AddWithValue("@nombre", aprendiz.nombre);
+                    command.Parameters.AddWithValue("@apellido", aprendiz.apellido);
+                    command.Parameters.AddWithValue("@correo", aprendiz.correo);
+                    command.Parameters.AddWithValue("@contraseña", aprendiz.contraseña);
+                    command.Parameters.AddWithValue("@fecha_registro", aprendiz.fecha_registro);
+
+                    connection.Open();
+                    command.ExecuteNonQuery();
+                }
+
+                return RedirectToAction("PerfilCreado");
+            }
+            return View(aprendiz);
+        }
+
+        private string GenerarCorreo(string nombre, string apellido)
+        {
+            string dominio = "aprendices.institucion.edu";
+            string correo = $"{nombre.ToLower()}.{apellido.ToLower()}@{dominio}";
+            return correo;
+        }
+
+        private string GenerarContraseña()
+        {
+            return Guid.NewGuid().ToString().Substring(0, 8); // Genera una contraseña aleatoria de 8 caracteres
+        }
+
+        public ActionResult PerfilCreado()
+        {
+            return View();
+        }
+
+        public ActionResult ListaAprendices(string search)
+        {
+            List<Aprendiz> aprendices = new List<Aprendiz>();
+
+            using (SqlConnection connection = new SqlConnection(Conexion))
+            {
+                string query = "SELECT id_usuario, nombre, apellido, correo, tipo_usuario, telefono, fecha_registro FROM usuarios WHERE tipo_usuario = 'Aprendiz'";
+
+                if (!string.IsNullOrEmpty(search))
+                {
+                    query += " AND (nombre LIKE @search OR apellido LIKE @search)";
+                }
+
+                SqlCommand command = new SqlCommand(query, connection);
+                command.Parameters.AddWithValue("@search", "%" + search + "%");
+
+                connection.Open();
+                SqlDataReader reader = command.ExecuteReader();
+                while (reader.Read())
+                {
+                    Aprendiz aprendiz = new Aprendiz
+                    {
+                        id_usuario = (int)reader["id_usuario"],
+                        nombre = reader["nombre"].ToString(),
+                        apellido = reader["apellido"].ToString(),
+                        correo = reader["correo"].ToString(),
+                        tipo_usuario = reader["tipo_usuario"].ToString(),
+                        telefono = (long)reader["telefono"],
+                        fecha_registro = (DateTime)reader["fecha_registro"]
+                    };
+                    aprendices.Add(aprendiz);
+                }
+            }
+
+            return View(aprendices);
+        }
+
+        public int ObtenerIdInstructor()
+        {
+            if (User.Identity.IsAuthenticated)
+            {
+                string correo_usuario = User.Identity.Name;
+                int id_usuario = 0;
+
+                string query = "SELECT id_usuario FROM usuarios WHERE correo = @correo";
+
+                using (SqlConnection connection = new SqlConnection(Conexion))
+                {
+                    SqlCommand command = new SqlCommand(query, connection);
+                    command.Parameters.AddWithValue("@correo", correo_usuario);
+
+                    try
+                    {
+                        connection.Open();
+                        SqlDataReader reader = command.ExecuteReader();
+                        if (reader.Read())
+                        {
+                            id_usuario = reader.GetInt32(0);
+                        }
+                        reader.Close();
+                    }
+                    catch (Exception)
+                    {
+
+                    }
+                }
+
+                return id_usuario;
+            }
+            else
+            {
+                return 0;
+            }
+        }
+    }
+}
