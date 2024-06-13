@@ -278,12 +278,12 @@ _excusa = @dias WHERE id_usuario = @instructorId";
                 {
                     Ficha ficha = new Ficha
                     {
-                        NumeroFicha = reader["numero_ficha"].ToString(),
-                        TipoFicha = reader["tipo_ficha"].ToString(),
-                        Jornada = reader["jornada"].ToString(),
-                        FotoFicha = reader["foto_ficha"].ToString(),
-                        EstadoFicha = reader["estado_ficha"].ToString(),
-                        FechaRegistro = (DateTime)reader["fecha_registro"]
+                        numero_ficha = reader["numero_ficha"].ToString(),
+                        tipo_ficha = reader["tipo_ficha"].ToString(),
+                        jornada = reader["jornada"].ToString(),
+                        foto_ficha = reader["foto_ficha"].ToString(),
+                        estado_ficha = reader["estado_ficha"].ToString(),
+                        fecha_registro = (DateTime)reader["fecha_registro"]
                     };
                     fichas.Add(ficha);
                 }
